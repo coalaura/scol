@@ -27,7 +27,6 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-          cache: false
 
       - name: Build
         shell: bash
@@ -55,7 +54,7 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v6
         with:
-          name: scol_${{ matrix.goos }}_${{ matrix.goarch }}
+          name: scol_${{ matrix.goos }}
           path: build/*
 
   release:
