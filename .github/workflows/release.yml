@@ -48,7 +48,7 @@ jobs:
           go build \
             -trimpath \
             -buildvcs=false \
-            -ldflags "-s -w \
+            -ldflags "-s -w" \
             -o "$OUT" .
 
       - name: Upload Artifact
