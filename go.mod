@@ -17,4 +17,4 @@ require (
 	golang.org/x/text v0.3.8 // indirect
 )
 
-replace github.com/hellsontime/scdl => github.com/coalaura/scdl v0.0.0-20260414180954-2df0e7d5b82d
+replace github.com/hellsontime/scdl => github.com/coalaura/scdl v0.0.0-20260414185905-c391170ac301
