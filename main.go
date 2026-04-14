@@ -4,7 +4,10 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -69,6 +72,22 @@ func processDownload(client *scdl.Client, d *Download) {
 		return
 	}
 
+	if track.Album == "" {
+		track.Album = track.Artist
+	}
+
+	artistDir := sanitizePath(track.Artist)
+
+	albumDir := filepath.Join(artistDir, sanitizePath(track.Album))
+
+	if err := os.MkdirAll(albumDir, 0755); err != nil {
+		updateStatus(d, "Error: Mkdir", 0)
+
+		return
+	}
+
+	downloadArtistArt(ctx, artistDir, track)
+
 	mu.Lock()
 
 	if track.Artist != "" && track.Title != "" {
@@ -83,7 +102,7 @@ func processDownload(client *scdl.Client, d *Download) {
 
 	updateStatus(d, "Downloading", 0)
 
-	_, err = client.Download(ctx, track, ".", func(downloaded, total int) {
+	_, err = client.Download(ctx, track, albumDir, func(downloaded, total int) {
 		if total > 0 {
 			pct := (downloaded * 100) / total
 
@@ -121,7 +140,8 @@ func render() {
 
 	b.WriteString("\033[?25l")
 	b.WriteString("\033[s")
-	b.WriteString(fmt.Sprintf("\033[%dA", len(downloads)))
+
+	fmt.Fprintf(&b, "\033[%dA", len(downloads))
 
 	for _, d := range downloads {
 		b.WriteString("\r\033[2K")
@@ -137,9 +157,9 @@ func render() {
 		}
 
 		bar := makeBar(d.Progress)
-		line := fmt.Sprintf("%-40s │ %-11s │ %s", title, d.Status, bar)
 
-		b.WriteString(line)
+		fmt.Fprintf(&b, "%-40s │ %-11s │ %s", title, d.Status, bar)
+
 		b.WriteString("\033[1B")
 	}
 
@@ -158,7 +178,7 @@ func makeBar(percent int) string {
 
 	b.WriteString("[")
 
-	for i := 0; i < width; i++ {
+	for i := range width {
 		if i < filled {
 			b.WriteString("=")
 		} else if i == filled && percent < 100 && percent > 0 {
@@ -168,7 +188,62 @@ func makeBar(percent int) string {
 		}
 	}
 
-	b.WriteString(fmt.Sprintf("] %3d%%", percent))
+	fmt.Fprintf(&b, "] %3d%%", percent)
 
 	return b.String()
+}
+
+func sanitizePath(name string) string {
+	invalid := []string{"<", ">", ":", "\"", "/", "\\", "|", "?", "*"}
+	for _, c := range invalid {
+		name = strings.ReplaceAll(name, c, "_")
+	}
+
+	return strings.TrimSpace(name)
+}
+
+func downloadArtistArt(ctx context.Context, artistDir string, track *scdl.Track) {
+	if track.ArtistAvatarURL == "" {
+		return
+	}
+
+	imgPath := filepath.Join(artistDir, "artist.jpg")
+	if _, err := os.Stat(imgPath); err == nil {
+		return
+	}
+
+	artistURL := strings.Replace(track.ArtistAvatarURL, "-large.", "-t500x500.", 1)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, artistURL, nil)
+	if err != nil {
+		return
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		req, err = http.NewRequestWithContext(ctx, http.MethodGet, track.ArtistAvatarURL, nil)
+		if err != nil {
+			return
+		}
+
+		resp, err = http.DefaultClient.Do(req)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			if resp != nil {
+				resp.Body.Close()
+			}
+
+			return
+		}
+	}
+
+	defer resp.Body.Close()
+
+	out, err := os.Create(imgPath)
+	if err != nil {
+		return
+	}
+
+	defer out.Close()
+
+	io.Copy(out, resp.Body)
 }
