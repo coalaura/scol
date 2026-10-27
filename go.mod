@@ -5,6 +5,7 @@ go 1.26.1
 require (
 	github.com/coalaura/plain v1.6.5
 	github.com/hellsontime/scdl v1.1.3
+	github.com/urfave/cli/v3 v3.14.0
 )
 
 require (

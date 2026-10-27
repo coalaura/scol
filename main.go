@@ -13,6 +13,7 @@ import (
 
 	"github.com/coalaura/plain"
 	"github.com/hellsontime/scdl"
+	"github.com/urfave/cli/v3"
 )
 
 type Download struct {
@@ -29,15 +30,30 @@ var (
 
 var log = plain.New()
 
+var version = "dev"
+
 func main() {
+	command := &cli.Command{
+		Name:    "scol",
+		Usage:   "Download SoundCloud tracks",
+		Version: strings.TrimPrefix(version, "v"),
+		Action:  run,
+	}
+
+	err := command.Run(context.Background(), os.Args)
+	log.MustFail(err)
+}
+
+func run(ctx context.Context, _ *cli.Command) error {
 	log.Print("> ")
 
-	ctx := context.Background()
-
 	client, err := scdl.NewClient(ctx)
-	log.MustFail(err)
+	if err != nil {
+		return err
+	}
 
 	scanner := bufio.NewScanner(os.Stdin)
+
 	for scanner.Scan() {
 		url := strings.TrimSpace(scanner.Text())
 		if url != "" {
@@ -58,6 +74,8 @@ func main() {
 
 		render()
 	}
+
+	return scanner.Err()
 }
 
 func processDownload(client *scdl.Client, d *Download) {
@@ -80,7 +98,8 @@ func processDownload(client *scdl.Client, d *Download) {
 
 	albumDir := filepath.Join(artistDir, sanitizePath(track.Album))
 
-	if err := os.MkdirAll(albumDir, 0755); err != nil {
+	err = os.MkdirAll(albumDir, 0755)
+	if err != nil {
 		updateStatus(d, "Error: Mkdir", 0)
 
 		return
@@ -195,6 +214,7 @@ func makeBar(percent int) string {
 
 func sanitizePath(name string) string {
 	invalid := []string{"<", ">", ":", "\"", "/", "\\", "|", "?", "*"}
+
 	for _, c := range invalid {
 		name = strings.ReplaceAll(name, c, "_")
 	}
@@ -208,7 +228,9 @@ func downloadArtistArt(ctx context.Context, artistDir string, track *scdl.Track)
 	}
 
 	imgPath := filepath.Join(artistDir, "artist.jpg")
-	if _, err := os.Stat(imgPath); err == nil {
+
+	_, err := os.Stat(imgPath)
+	if err == nil {
 		return
 	}
 

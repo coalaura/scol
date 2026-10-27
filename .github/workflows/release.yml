@@ -33,6 +33,8 @@ jobs:
           arch: ${{ matrix.goarch }}
           optimization: compatible
           generate: false
+          go-flags: |
+            -ldflags=-X main.version=${{ github.ref_name }}
           output: dist/scol_${{ github.ref_name }}_${{ matrix.goos }}${{ matrix.goos == 'windows' && '.exe' || '' }}
 
       - name: Sign
