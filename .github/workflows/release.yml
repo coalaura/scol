@@ -6,7 +6,7 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -17,66 +17,78 @@ jobs:
       matrix:
         include:
           - goos: linux
+            goarch: amd64
           - goos: windows
+            goarch: amd64
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-
       - name: Build
-        shell: bash
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: 0
-        run: |
-          mkdir -p build
+        id: build
+        uses: coalaura/build@v1
+        with:
+          os: ${{ matrix.goos }}
+          arch: ${{ matrix.goarch }}
+          optimization: compatible
+          generate: false
+          output: dist/scol_${{ github.ref_name }}_${{ matrix.goos }}${{ matrix.goos == 'windows' && '.exe' || '' }}
 
-          if [ "$GOOS" = "windows" ]; then
-            EXT=".exe"
-          else
-            EXT=""
-          fi
-
-          OUT="build/scol_${{ github.ref_name }}_${GOOS}${EXT}"
-
-          go build \
-            -trimpath \
-            -buildvcs=false \
-            -ldflags "-s -w" \
-            -o "$OUT" .
+      - name: Sign
+        id: sign
+        uses: coalaura/sign@v1
+        with:
+          path: ${{ steps.build.outputs.path }}
+          key: ${{ secrets.COALAURA_PFX }}
+          passphrase: ${{ secrets.COALAURA_PFX_PASSWORD }}
+          chain: |
+            https://wiese2.org/pki/issuing.pem
+            https://wiese2.org/pki/root.pem
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v6
         with:
-          name: scol_${{ matrix.goos }}
-          path: build/*
+          name: signed-scol-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ steps.sign.outputs.path }}
+          if-no-files-found: error
 
   release:
     needs: build
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+
     steps:
       - name: Download Artifacts
         uses: actions/download-artifact@v8
         with:
-          path: artifacts
+          pattern: signed-scol-*
+          path: dist
           merge-multiple: true
 
-      - name: Prepare Release
-        run: |
-          mkdir final
-          cp artifacts/* final/
+      - name: Generate Checksums
+        working-directory: dist
+        run: sha256sum -b scol_* > SHA256SUMS
+
+      - name: Attest Signed Binaries
+        uses: actions/attest@v4
+        with:
+          subject-checksums: dist/SHA256SUMS
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: "Release ${{ github.ref_name }}"
-          files: final/*
+          files: |
+            dist/scol_*
+            dist/SHA256SUMS
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
